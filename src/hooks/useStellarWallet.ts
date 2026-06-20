@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  getAddress,
-  getNetworkDetails,
-  isConnected as isFreighterConnected,
-  setAllowed,
-  signTransaction,
-} from "@stellar/freighter-api";
 import { Networks } from "@stellar/stellar-sdk";
+import { KitEventType, type ISupportedWallet } from "@creit.tech/stellar-wallets-kit/types";
 import {
   buildXlmPaymentTransaction,
   ensureDestinationExists,
@@ -18,8 +12,9 @@ import {
   toFriendlyHorizonError,
   validateXlmAmount,
 } from "../lib/stellar";
+import { initWalletKit, StellarWalletsKit } from "../lib/walletKit";
 
-const STORAGE_KEY = "mealpass.freighterPublicKey";
+const STORAGE_KEY = "mealpass.walletPublicKey";
 
 type TxStatus = "idle" | "pending" | "success" | "error";
 
@@ -35,6 +30,8 @@ export type StellarWalletState = {
   balance: string;
   spendableBalance: number;
   reserveBalance: number;
+  supportedWallets: ISupportedWallet[];
+  selectedWalletId: string;
   isConnecting: boolean;
   isLoadingBalance: boolean;
   isSending: boolean;
@@ -47,27 +44,15 @@ function getApiErrorMessage(result: unknown): string | null {
   if (!result || typeof result !== "object") return null;
   const error = (result as { error?: { message?: string } | string }).error;
   if (!error) return null;
-  return typeof error === "string" ? error : error.message || "Freighter returned an error.";
-}
-
-function extractAddress(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (!result || typeof result !== "object") return "";
-  const value = result as { address?: string; publicKey?: string };
-  return value.address || value.publicKey || "";
-}
-
-function extractBoolean(result: unknown, key: string): boolean {
-  if (typeof result === "boolean") return result;
-  if (!result || typeof result !== "object") return false;
-  return Boolean((result as Record<string, unknown>)[key]);
+  return typeof error === "string" ? error : error.message || "Wallet returned an error.";
 }
 
 function extractSignedXdr(result: unknown): string {
   if (typeof result === "string") return result;
   if (!result || typeof result !== "object") return "";
-  const value = result as { signedTxXdr?: string; signedTransaction?: string };
-  return value.signedTxXdr || value.signedTransaction || "";
+  return (result as { signedTxXdr?: string; signedTransaction?: string }).signedTxXdr ||
+    (result as { signedTransaction?: string }).signedTransaction ||
+    "";
 }
 
 function isWrongNetwork(networkDetails: unknown): boolean {
@@ -79,12 +64,8 @@ function isWrongNetwork(networkDetails: unknown): boolean {
   };
 
   if (details.error) return false;
-  if (details.networkPassphrase) {
-    return details.networkPassphrase !== STELLAR_NETWORK_PASSPHRASE;
-  }
-  if (details.network) {
-    return details.network.toUpperCase() !== STELLAR_NETWORK;
-  }
+  if (details.networkPassphrase) return details.networkPassphrase !== STELLAR_NETWORK_PASSPHRASE;
+  if (details.network) return details.network.toUpperCase() !== STELLAR_NETWORK;
   return false;
 }
 
@@ -98,6 +79,8 @@ export function useStellarWallet() {
   const [balance, setBalance] = useState("");
   const [spendableBalance, setSpendableBalance] = useState(0);
   const [reserveBalance, setReserveBalance] = useState(0);
+  const [supportedWallets, setSupportedWallets] = useState<ISupportedWallet[]>([]);
+  const [selectedWalletId, setSelectedWalletId] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -127,6 +110,7 @@ export function useStellarWallet() {
   }, [publicKey]);
 
   const disconnect = useCallback(() => {
+    void StellarWalletsKit.disconnect().catch(() => undefined);
     setPublicKey("");
     setBalance("");
     setSpendableBalance(0);
@@ -134,9 +118,7 @@ export function useStellarWallet() {
     setError("");
     setTxHash("");
     setTxStatus("idle");
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   const connect = useCallback(async () => {
@@ -146,56 +128,46 @@ export function useStellarWallet() {
     setTxStatus("idle");
 
     try {
-      const connectionResult = await isFreighterConnected();
-      const connectionError = getApiErrorMessage(connectionResult);
-      if (connectionError) throw new Error(connectionError);
+      initWalletKit();
+      const { address } = await StellarWalletsKit.authModal();
 
-      if (!extractBoolean(connectionResult, "isConnected")) {
-        throw new Error(
-          "Freighter wallet is required. Install the Freighter browser extension and switch to Testnet.",
-        );
+      if (!isValidStellarPublicKey(address)) {
+        throw new Error("Selected wallet did not return a valid Stellar public key.");
       }
 
-      const allowedResult = await setAllowed();
-      const allowedError = getApiErrorMessage(allowedResult);
-      if (allowedError) throw new Error(allowedError);
-      if (!extractBoolean(allowedResult, "isAllowed")) {
-        throw new Error("Freighter connection was not approved.");
-      }
-
-      const addressResult = await getAddress();
-      const addressError = getApiErrorMessage(addressResult);
-      if (addressError) throw new Error(addressError);
-
-      const nextPublicKey = extractAddress(addressResult);
-      if (!isValidStellarPublicKey(nextPublicKey)) {
-        throw new Error("Freighter did not return a valid Stellar public key.");
-      }
-
-      const networkDetails = await getNetworkDetails();
-      const networkError = getApiErrorMessage(networkDetails);
-      if (networkError) throw new Error(networkError);
+      const networkDetails = await StellarWalletsKit.getNetwork();
       if (isWrongNetwork(networkDetails)) {
-        throw new Error("Freighter is not on Testnet. Switch Freighter to Testnet and reconnect.");
+        throw new Error("Selected wallet is not on Testnet. Switch to Testnet and reconnect.");
       }
 
-      setPublicKey(nextPublicKey);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(STORAGE_KEY, nextPublicKey);
-      }
-      await refreshBalance(nextPublicKey);
+      setPublicKey(address);
+      if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, address);
+      await refreshBalance(address);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to connect Freighter.";
+      const message = err instanceof Error ? err.message : "Unable to connect a Stellar wallet.";
       setError(message);
-      console.error("Freighter connect failed", err);
+      console.error("Wallet connect failed", err);
     } finally {
       setIsConnecting(false);
     }
   }, [refreshBalance]);
 
+  const signWithWallet = useCallback(async (xdr: string) => {
+    const signedResult = await StellarWalletsKit.signTransaction(xdr, {
+      networkPassphrase: Networks.TESTNET,
+      address: publicKey,
+    });
+    const signingError = getApiErrorMessage(signedResult);
+    if (signingError) throw new Error(signingError);
+
+    const signedTxXdr = extractSignedXdr(signedResult);
+    if (!signedTxXdr) throw new Error("Wallet did not return a signed transaction.");
+    return { signedTxXdr };
+  }, [publicKey]);
+
   const sendXlm = useCallback(async ({ destination, amount, memo }: SendPaymentArgs) => {
     if (!publicKey) {
-      setError("Connect Freighter before sending XLM.");
+      setError("Connect a Stellar wallet before sending XLM.");
       return;
     }
 
@@ -209,9 +181,9 @@ export function useStellarWallet() {
     setTxStatus("pending");
 
     try {
-      const networkDetails = await getNetworkDetails();
+      const networkDetails = await StellarWalletsKit.getNetwork();
       if (isWrongNetwork(networkDetails)) {
-        throw new Error("Freighter is not on Testnet. Switch Freighter to Testnet before signing.");
+        throw new Error("Selected wallet is not on Testnet. Switch to Testnet before signing.");
       }
 
       if (!isValidStellarPublicKey(cleanDestination)) {
@@ -239,54 +211,65 @@ export function useStellarWallet() {
         memo: cleanMemo,
       });
 
-      const signedResult = await signTransaction(transaction.toXDR(), {
-        networkPassphrase: Networks.TESTNET,
-        address: publicKey,
-      });
-      const signingError = getApiErrorMessage(signedResult);
-      if (signingError) throw new Error(signingError);
-
-      const signedTxXdr = extractSignedXdr(signedResult);
-      if (!signedTxXdr) {
-        throw new Error("Freighter did not return a signed transaction.");
-      }
-
+      const { signedTxXdr } = await signWithWallet(transaction.toXDR());
       const response = await submitSignedTransaction(signedTxXdr);
       setTxHash(response.hash);
       setTxStatus("success");
       await refreshBalance(publicKey);
     } catch (err) {
-      const message = toFriendlyHorizonError(
-        err,
-        "Unable to send this Testnet payment.",
-      );
+      const message = toFriendlyHorizonError(err, "Unable to send this Testnet payment.");
       setTxStatus("error");
       setError(message);
       console.error("XLM payment failed", err);
     } finally {
       setIsSending(false);
     }
-  }, [publicKey, refreshBalance]);
+  }, [publicKey, refreshBalance, signWithWallet]);
 
   useEffect(() => {
+    initWalletKit();
+    void StellarWalletsKit.refreshSupportedWallets().then(setSupportedWallets).catch(() => undefined);
+
+    const stopState = StellarWalletsKit.on(KitEventType.STATE_UPDATED, (event) => {
+      const address = event.payload.address || "";
+      if (address && isValidStellarPublicKey(address)) {
+        setPublicKey(address);
+        if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, address);
+        void refreshBalance(address);
+      }
+    });
+    const stopWallet = StellarWalletsKit.on(KitEventType.WALLET_SELECTED, (event) => {
+      setSelectedWalletId(event.payload.id || "");
+    });
+    const stopDisconnect = StellarWalletsKit.on(KitEventType.DISCONNECT, disconnect);
+
     const stored = useStoredPublicKey();
     if (stored && isValidStellarPublicKey(stored)) {
       setPublicKey(stored);
       void refreshBalance(stored);
     }
-  }, [refreshBalance]);
+
+    return () => {
+      stopState();
+      stopWallet();
+      stopDisconnect();
+    };
+  }, [disconnect, refreshBalance]);
 
   return useMemo<StellarWalletState & {
     connect: () => Promise<void>;
     disconnect: () => void;
     refreshBalance: () => Promise<void>;
     sendXlm: (args: SendPaymentArgs) => Promise<void>;
+    signWithWallet: (xdr: string) => Promise<{ signedTxXdr: string }>;
   }>(() => ({
     publicKey,
     isConnected: Boolean(publicKey),
     balance,
     spendableBalance,
     reserveBalance,
+    supportedWallets,
+    selectedWalletId,
     isConnecting,
     isLoadingBalance,
     isSending,
@@ -297,11 +280,14 @@ export function useStellarWallet() {
     disconnect,
     refreshBalance: () => refreshBalance(publicKey),
     sendXlm,
+    signWithWallet,
   }), [
     publicKey,
     balance,
     spendableBalance,
     reserveBalance,
+    supportedWallets,
+    selectedWalletId,
     isConnecting,
     isLoadingBalance,
     isSending,
@@ -312,5 +298,6 @@ export function useStellarWallet() {
     disconnect,
     refreshBalance,
     sendXlm,
+    signWithWallet,
   ]);
 }

@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, contracttype, token, Address, Env};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11,6 +11,36 @@ pub struct Receipt {
     pub amount: i128,
     pub allowance_after: i128,
     pub timestamp: u64,
+}
+
+#[contractevent(topics = ["mealpass", "merchant"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MerchantSetEvent {
+    pub admin: Address,
+    #[topic]
+    pub merchant: Address,
+    pub approved: bool,
+}
+
+#[contractevent(topics = ["mealpass", "funded"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StudentFundedEvent {
+    pub admin: Address,
+    #[topic]
+    pub student: Address,
+    pub amount: i128,
+    pub allowance_after: i128,
+}
+
+#[contractevent(topics = ["mealpass", "paid"])]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MealPaidEvent {
+    #[topic]
+    pub receipt_id: u64,
+    pub student: Address,
+    pub merchant: Address,
+    pub amount: i128,
+    pub allowance_after: i128,
 }
 
 #[contracttype]
@@ -47,7 +77,12 @@ impl MealPassPh {
         require_admin(&env, &admin);
         env.storage()
             .persistent()
-            .set(&DataKey::Merchant(merchant), &approved);
+            .set(&DataKey::Merchant(merchant.clone()), &approved);
+        env.events().publish_event(&MerchantSetEvent {
+            admin,
+            merchant,
+            approved,
+        });
     }
 
     /// Moves USDC from the school into this contract and credits a student allowance.
@@ -62,9 +97,16 @@ impl MealPassPh {
             &amount,
         );
 
-        let key = DataKey::Allowance(student);
+        let key = DataKey::Allowance(student.clone());
         let current = read_i128(&env, &key);
-        env.storage().persistent().set(&key, &(current + amount));
+        let allowance_after = current + amount;
+        env.storage().persistent().set(&key, &allowance_after);
+        env.events().publish_event(&StudentFundedEvent {
+            admin,
+            student,
+            amount,
+            allowance_after,
+        });
     }
 
     /// Student scans an approved canteen QR; the contract pays the canteen and records a receipt.
@@ -100,7 +142,7 @@ impl MealPassPh {
             &DataKey::Receipt(receipt_id),
             &Receipt {
                 id: receipt_id,
-                student,
+                student: student.clone(),
                 merchant: merchant.clone(),
                 amount,
                 allowance_after: remaining,
@@ -114,6 +156,14 @@ impl MealPassPh {
             &merchant,
             &amount,
         );
+
+        env.events().publish_event(&MealPaidEvent {
+            receipt_id,
+            student,
+            merchant,
+            amount,
+            allowance_after: remaining,
+        });
 
         receipt_id
     }

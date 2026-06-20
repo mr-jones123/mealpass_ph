@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useStellarWallet } from "../hooks/useStellarWallet";
+import { useMealPassContract } from "../hooks/useMealPassContract";
 import {
   STELLAR_EXPERT_TESTNET_TX_URL,
   truncatePublicKey,
@@ -50,13 +51,14 @@ function StatusPill({ connected }: { connected: boolean }) {
   return (
     <div className={connected ? "status-pill is-live" : "status-pill"}>
       <span className="status-dot" />
-      {connected ? "Freighter connected" : "Testnet wallet required"}
+      {connected ? "Wallet connected" : "Testnet wallet required"}
     </div>
   );
 }
 
 export function StellarWalletPanel() {
   const wallet = useStellarWallet();
+  const mealPass = useMealPassContract(wallet.publicKey, wallet.signWithWallet);
   const [destination, setDestination] = useState("");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
@@ -83,15 +85,20 @@ export function StellarWalletPanel() {
     await wallet.sendXlm({ destination, amount, memo });
   }
 
+  async function handleContractSubmit(event: { preventDefault: () => void }) {
+    event.preventDefault();
+    await mealPass.approve();
+  }
+
   return (
     <section className="wallet-shell" aria-label="Stellar Testnet wallet">
       <div className="hero-copy">
-        <div className="school-badge">MealPass PH Level 1</div>
+        <div className="school-badge">MealPass PH Level 2</div>
         <h1>Campus meal aid, paid on Stellar Testnet.</h1>
         <p>
-          Connect Freighter, check your XLM balance, and send a small Testnet
-          payment. This proves the wallet rail before we wire the MealPass smart
-          contract actions.
+          Connect with StellarWalletsKit, check your XLM balance, approve a
+          canteen on the MealPass contract, and watch contract events sync from
+          Soroban RPC.
         </p>
       </div>
 
@@ -100,7 +107,7 @@ export function StellarWalletPanel() {
           <div className="card-heading">
             <div>
               <p className="eyebrow">Wallet session</p>
-              <h2>Freighter setup</h2>
+              <h2>Wallet setup</h2>
             </div>
             <StatusPill connected={wallet.isConnected} />
           </div>
@@ -121,7 +128,7 @@ export function StellarWalletPanel() {
               onClick={wallet.connect}
               disabled={wallet.isConnecting}
             >
-              {wallet.isConnecting ? "Opening Freighter" : "Connect Freighter Wallet"}
+              {wallet.isConnecting ? "Opening wallet kit" : "Choose Stellar Wallet"}
             </button>
           ) : (
             <div className="connected-box">
@@ -135,12 +142,26 @@ export function StellarWalletPanel() {
               <button className="secondary-button" type="button" onClick={wallet.disconnect}>
                 Disconnect
               </button>
+              {wallet.selectedWalletId ? (
+                <small>Selected wallet: {wallet.selectedWalletId}</small>
+              ) : null}
             </div>
           )}
 
+          <div className="wallet-options">
+            <p className="mini-label">Wallet options</p>
+            <div>
+              {wallet.supportedWallets.slice(0, 6).map((option) => (
+                <span key={option.id} className={option.isAvailable ? "wallet-option is-ready" : "wallet-option"}>
+                  {option.name}
+                </span>
+              ))}
+            </div>
+          </div>
+
           <p className="helper-copy">
-            Freighter wallet is required. Install the browser extension and set
-            it to Testnet before signing.
+            WalletsKit handles Freighter, xBull, Albedo, Lobstr, and other
+            Stellar wallets. Use Testnet only.
           </p>
         </article>
 
@@ -237,6 +258,94 @@ export function StellarWalletPanel() {
         </form>
       </div>
 
+      <section className="contract-grid" aria-label="MealPass contract console">
+        <form className="clay-card contract-card" onSubmit={handleContractSubmit}>
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">Smart contract</p>
+              <h2>Approve a canteen</h2>
+            </div>
+            <span className="meal-chip">Soroban RPC</span>
+          </div>
+
+          <label className="field-block">
+            <span>MealPass contract address</span>
+            <input
+              value={mealPass.contractId}
+              onChange={(event) => mealPass.setContractId(event.target.value)}
+              placeholder="C..."
+              autoComplete="off"
+            />
+            <small>Redeploy after contract event changes, then paste the new C address.</small>
+          </label>
+
+          <label className="field-block">
+            <span>Canteen merchant public key</span>
+            <input
+              value={mealPass.merchant}
+              onChange={(event) => mealPass.setMerchant(event.target.value)}
+              placeholder="G..."
+              autoComplete="off"
+            />
+            <small>The connected wallet must be the school admin stored in the contract.</small>
+          </label>
+
+          <div className="contract-actions">
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={!wallet.isConnected || mealPass.status === "pending"}
+            >
+              {mealPass.status === "pending" ? "Calling contract" : "Approve merchant"}
+            </button>
+            <button className="ghost-button" type="button" onClick={mealPass.readState}>
+              {mealPass.isReading ? "Reading" : "Read receipt count"}
+            </button>
+          </div>
+
+          <dl className="contract-meta">
+            <div>
+              <dt>Receipt count</dt>
+              <dd>{mealPass.receiptCount}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{mealPass.statusText || mealPass.status}</dd>
+            </div>
+          </dl>
+        </form>
+
+        <article className="clay-card events-card">
+          <div className="card-heading compact">
+            <div>
+              <p className="eyebrow">Live events</p>
+              <h2>Contract feed</h2>
+            </div>
+            <button type="button" className="ghost-button" onClick={mealPass.refreshEvents}>
+              {mealPass.isListening ? "Syncing" : "Sync"}
+            </button>
+          </div>
+
+          {mealPass.events.length ? (
+            <ol className="event-list">
+              {mealPass.events.map((event) => (
+                <li key={event.id}>
+                  <strong>{event.type}</strong>
+                  <span>Ledger {event.ledger}</span>
+                  <code>{truncatePublicKey(event.txHash)}</code>
+                  <small>{event.payload}</small>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="empty-note">
+              No contract events found yet. Approve a merchant after redeploying
+              the event-enabled contract.
+            </p>
+          )}
+        </article>
+      </section>
+
       <div className="feedback-strip" aria-live="polite">
         {wallet.error ? <p className="error-text">{wallet.error}</p> : null}
         {wallet.txStatus === "pending" ? (
@@ -247,6 +356,19 @@ export function StellarWalletPanel() {
             Transaction sent. Hash: <code>{truncatePublicKey(wallet.txHash)}</code>{" "}
             <a href={txLink} target="_blank" rel="noreferrer">
               View on Stellar Expert
+            </a>
+          </p>
+        ) : null}
+        {mealPass.error ? <p className="error-text">{mealPass.error}</p> : null}
+        {mealPass.txHash ? (
+          <p className="success-text">
+            Contract call hash: <code>{truncatePublicKey(mealPass.txHash)}</code>{" "}
+            <a
+              href={`${STELLAR_EXPERT_TESTNET_TX_URL}/${mealPass.txHash}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View contract transaction
             </a>
           </p>
         ) : null}

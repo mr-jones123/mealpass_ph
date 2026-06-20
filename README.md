@@ -48,8 +48,9 @@ bun install
 bun dev
 ```
 
-The SPA connects Freighter on Stellar Testnet, shows the connected public key,
-loads the XLM balance from Horizon Testnet, and sends signed Testnet XLM payments.
+The SPA connects through StellarWalletsKit on Stellar Testnet, shows the connected public key,
+loads the XLM balance from Horizon Testnet, sends signed Testnet XLM payments,
+and calls the MealPass Soroban contract through Soroban RPC.
 
 ## Build
 
@@ -137,7 +138,25 @@ soroban contract invoke \
 
 <img width="1421" height="725" alt="image" src="https://github.com/user-attachments/assets/aa5fccf3-1484-4e91-bb76-9eff704b48b6" />
 
-Contract ID: CBHODUN3XFZLWJFIXYUMAO4KKFBKJIKWMQFLLXQ55BXRWSUIA7A2W2UW
+Current deployed contract ID: CBHODUN3XFZLWJFIXYUMAO4KKFBKJIKWMQFLLXQ55BXRWSUIA7A2W2UW
+
+Level 2 event-enabled Wasm hash after build:
+
+```text
+6dfae6aed85405dccdfe4ba2e37242287287d9e3eafff171b2fc5806fe7e5833
+```
+
+Redeploy the event-enabled contract for Level 2, initialize it with the school
+admin wallet, then paste the new contract ID into the frontend contract field.
+
+## Level 2 Features
+
+- StellarWalletsKit multi-wallet connection.
+- Three visible error classes: wallet connection, balance/payment, and contract call errors.
+- Contract read call: `receipt_count`.
+- Contract write call: `set_merchant`.
+- Transaction status tracking while the contract call is pending, submitted, and confirmed.
+- Live contract event polling through Soroban RPC.
 
 ## License
 
