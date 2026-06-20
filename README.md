@@ -31,23 +31,38 @@ MealPass PH helps schools and sponsors send restricted meal aid without forcing 
 
 - Rust stable with `wasm32v1-none` target.
 - Soroban CLI or Stellar CLI version 27.x.
+- Bun for the React wallet demo.
+- Freighter browser extension switched to Testnet.
 - A funded Stellar testnet identity.
 
 ```bash
 rustup target add wasm32v1-none
 soroban --version
+bun --version
 ```
+
+## Frontend Wallet Demo
+
+```bash
+bun install
+bun dev
+```
+
+The SPA connects Freighter on Stellar Testnet, shows the connected public key,
+loads the XLM balance from Horizon Testnet, and sends signed Testnet XLM payments.
 
 ## Build
 
 ```bash
 soroban contract build
+bun run build
 ```
 
 ## Test
 
 ```bash
 cargo test
+bun run typecheck
 ```
 
 ## Deploy to Testnet
