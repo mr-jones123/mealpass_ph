@@ -117,6 +117,11 @@ soroban contract invoke \
   --merchant GCCANTEENADDRESS0000000000000000000000000000000000000 \
   --amount 15000000
 ```
+
+## Contract Details
+
+<img width="1421" height="725" alt="image" src="https://github.com/user-attachments/assets/aa5fccf3-1484-4e91-bb76-9eff704b48b6" />
+
 Contract ID: CBHODUN3XFZLWJFIXYUMAO4KKFBKJIKWMQFLLXQ55BXRWSUIA7A2W2UW
 
 ## License
