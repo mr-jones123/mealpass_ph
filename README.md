@@ -1,6 +1,6 @@
 # MealPass PH
 
-Campus meal aid locked by a Soroban smart contract and paid to approved canteens in USDC.
+MealPass PH is a Stellar Testnet dApp for restricted campus meal aid. A school funds a student's meal allowance, approves canteens, and uses a Soroban smart contract to keep spending auditable.
 
 ## Problem
 
@@ -8,68 +8,173 @@ A scholarship student at University of San Carlos Cebu receives ₱500 weekly me
 
 ## Solution
 
-The school loads USDC into a Soroban meal allowance contract, the student scans a canteen QR, and the contract releases USDC only to approved food merchants with an auditable receipt.
+The school loads USDC into a Soroban meal allowance contract, the student scans a canteen QR, and the contract releases funds only to approved food merchants with an auditable receipt.
 
-## Timeline
+## Screenshots
 
-- Day 1: Deploy contract to testnet, create school, student, and canteen identities.
-- Day 2: Build the QR payment demo around `fund_student` and `pay_meal`.
-- Day 3: Add a small dashboard for allowance, receipts, and merchant totals.
-- Day 4: Polish the pitch with one live USDC testnet payment.
+### Home and wallet dashboard
+
+![MealPass home dashboard](docs/screenshots/mealpass-home.png)
+
+### Wallet options area
+
+![Wallet options](docs/screenshots/wallet-options.png)
+
+### Contract console and live event feed
+
+![Contract console](docs/screenshots/contract-console.png)
+
+### Submission placeholders
+
+Add these before final submission if you redeploy or capture live calls:
+
+```text
+Live demo link: TODO
+Event-enabled deployed contract address: TODO
+Contract call transaction hash: TODO
+Wallet modal screenshot: TODO, replace docs/screenshots/wallet-options.png if needed
+```
+
+## What This Demonstrates
+
+Level 1:
+
+- Stellar Testnet only.
+- Wallet connect and disconnect.
+- Connected public key display.
+- XLM balance fetch from Horizon Testnet.
+- Testnet XLM payment signed by wallet.
+- Transaction status, errors, and transaction hash.
+
+Level 2:
+
+- StellarWalletsKit multi-wallet connection.
+- Contract deployed to Stellar Testnet.
+- Contract read call from frontend: `receipt_count`.
+- Contract write call from frontend: `set_merchant`.
+- Transaction status tracking during contract calls.
+- Contract events emitted by Soroban contract.
+- Live event polling from Soroban RPC.
+- Three visible error classes: wallet connection, balance/payment, contract call.
+
+## Tech Stack
+
+- Frontend: Vite, React, TypeScript, CSS.
+- Package manager: Bun.
+- Wallets: StellarWalletsKit.
+- Stellar SDK: `@stellar/stellar-sdk`.
+- Smart contract: Soroban Rust contract.
+- Network: Stellar Testnet only.
+- Horizon: `https://horizon-testnet.stellar.org`.
+- Soroban RPC: `https://soroban-testnet.stellar.org`.
+
+## Repository Structure
+
+```text
+contracts/mealpass_ph/        Soroban smart contract
+src/components/               React UI components
+src/hooks/                    Wallet and contract hooks
+src/lib/                      Stellar, wallet kit, and contract services
+docs/screenshots/             README screenshots
+```
 
 ## Stellar Features Used
 
-- USDC transfers through a Stellar Asset Contract compatible token.
-- Soroban smart contracts for allowance rules, approved merchants, and receipts.
-- Trustlines for real USDC accounts on Stellar testnet or mainnet.
+- XLM transfers for Level 1 wallet payment demo.
+- Soroban smart contracts for MealPass rules.
+- StellarWalletsKit for multi-wallet support.
+- Horizon Testnet for account balance and payment submission.
+- Soroban RPC for contract calls, state reads, and event polling.
+- Trustlines for real USDC flow when using a deployed USDC asset contract.
 
-## Vision and Purpose
+## Smart Contract Functions
 
-MealPass PH helps schools and sponsors send restricted meal aid without forcing canteens into slow paper reconciliation. The goal is simple: students get lunch, canteens get fast settlement, and schools get transparent proof of spending.
+| Function | Type | Purpose |
+| --- | --- | --- |
+| `initialize(admin, token)` | Write | Stores school admin and settlement token. |
+| `set_merchant(admin, merchant, approved)` | Write | Approves or removes a canteen merchant. |
+| `fund_student(admin, student, amount)` | Write | Transfers token into contract and credits student allowance. |
+| `pay_meal(student, merchant, amount)` | Write | Pays approved merchant and records receipt. |
+| `receipt_count()` | Read | Returns latest receipt id. |
+| `allowance(student)` | Read | Returns remaining student allowance. |
+| `is_merchant(merchant)` | Read | Checks merchant approval. |
+| `receipt(id)` | Read | Returns stored receipt details. |
+
+## Contract Events
+
+The event-enabled contract emits:
+
+```text
+mealpass / merchant  when a canteen is approved or removed
+mealpass / funded    when a student allowance is funded
+mealpass / paid      when a student meal payment succeeds
+```
+
+The frontend polls Soroban RPC with `getEvents` and displays recent contract events in the live feed.
 
 ## Prerequisites
 
-- Rust stable with `wasm32v1-none` target.
-- Soroban CLI or Stellar CLI version 27.x.
-- Bun for the React wallet demo.
-- Freighter browser extension switched to Testnet.
-- A funded Stellar testnet identity.
+- Rust stable.
+- `wasm32v1-none` target.
+- Stellar CLI or Soroban CLI version 27.x.
+- Bun.
+- A Stellar Testnet wallet supported by StellarWalletsKit, Freighter recommended.
+- Funded Stellar Testnet identity.
 
 ```bash
 rustup target add wasm32v1-none
-soroban --version
+stellar --version
 bun --version
 ```
 
-## Frontend Wallet Demo
+## Install
 
 ```bash
 bun install
+```
+
+## Run Locally
+
+```bash
 bun dev
 ```
 
-The SPA connects through StellarWalletsKit on Stellar Testnet, shows the connected public key,
-loads the XLM balance from Horizon Testnet, sends signed Testnet XLM payments,
-and calls the MealPass Soroban contract through Soroban RPC.
+Open:
 
-## Build
-
-```bash
-soroban contract build
-bun run build
+```text
+http://localhost:5173
 ```
 
-## Test
+## Build and Test
 
 ```bash
-cargo test
 bun run typecheck
+bun run build
+cargo test
+stellar contract build
 ```
 
-## Deploy to Testnet
+Current checks passed locally:
+
+```text
+bun run typecheck: passed
+bun run build: passed, Vite reports a bundle size warning
+cargo test: passed, 5 tests
+stellar contract build: passed
+```
+
+## Deploy Contract to Testnet
+
+Build the Wasm:
 
 ```bash
-soroban contract deploy \
+stellar contract build
+```
+
+Deploy:
+
+```bash
+stellar contract deploy \
   --wasm target/wasm32v1-none/release/mealpass_ph.wasm \
   --source school \
   --network testnet
@@ -81,12 +186,26 @@ Save the returned contract ID:
 CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-## Sample CLI Invocation
+Current repository default contract ID:
 
-Initialize the contract with the school admin and USDC token contract:
+```text
+CBHODUN3XFZLWJFIXYUMAO4KKFBKJIKWMQFLLXQ55BXRWSUIA7A2W2UW
+```
+
+Important: the default contract ID may point to the earlier deployed contract. For Level 2 event review, redeploy the event-enabled Wasm and paste the new contract ID into the app.
+
+Event-enabled Wasm hash from the latest build:
+
+```text
+6dfae6aed85405dccdfe4ba2e37242287287d9e3eafff171b2fc5806fe7e5833
+```
+
+## Initialize Contract
+
+Initialize with the school admin wallet and settlement token contract address:
 
 ```bash
-soroban contract invoke \
+stellar contract invoke \
   --id $CONTRACT_ID \
   --source school \
   --network testnet \
@@ -95,10 +214,14 @@ soroban contract invoke \
   --token CCUSDCTOKENCONTRACT000000000000000000000000000000000000
 ```
 
+For a quick demo, the frontend Level 2 panel only needs an initialized contract and a connected admin wallet to call `set_merchant`.
+
+## Sample Contract Calls
+
 Approve a canteen:
 
 ```bash
-soroban contract invoke \
+stellar contract invoke \
   --id $CONTRACT_ID \
   --source school \
   --network testnet \
@@ -108,10 +231,20 @@ soroban contract invoke \
   --approved true
 ```
 
+Read receipt count:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source school \
+  --network testnet \
+  -- receipt_count
+```
+
 Fund a student allowance with 5 USDC using 7 decimal token units:
 
 ```bash
-soroban contract invoke \
+stellar contract invoke \
   --id $CONTRACT_ID \
   --source school \
   --network testnet \
@@ -121,10 +254,10 @@ soroban contract invoke \
   --amount 50000000
 ```
 
-MVP payment: student pays a canteen 1.50 USDC:
+Student pays a canteen 1.50 USDC:
 
 ```bash
-soroban contract invoke \
+stellar contract invoke \
   --id $CONTRACT_ID \
   --source student \
   --network testnet \
@@ -134,29 +267,39 @@ soroban contract invoke \
   --amount 15000000
 ```
 
-## Contract Details
+## Frontend Manual Test
 
-<img width="1421" height="725" alt="image" src="https://github.com/user-attachments/assets/aa5fccf3-1484-4e91-bb76-9eff704b48b6" />
+1. Run `bun dev`.
+2. Open the app in a browser with a Stellar wallet installed.
+3. Switch the wallet to Testnet.
+4. Fund the wallet with Testnet XLM.
+5. Click `Choose Stellar Wallet`.
+6. Confirm the connected public key appears.
+7. Confirm XLM balance loads.
+8. Send a small XLM payment to another funded Testnet account.
+9. Paste the event-enabled contract ID into the contract field.
+10. Connect the school admin wallet used during `initialize`.
+11. Enter a canteen merchant public key.
+12. Click `Approve merchant`.
+13. Confirm the transaction status updates and a transaction hash appears.
+14. Confirm the live event feed syncs the contract event.
 
-Current deployed contract ID: CBHODUN3XFZLWJFIXYUMAO4KKFBKJIKWMQFLLXQ55BXRWSUIA7A2W2UW
+## Submission Checklist
 
-Level 2 event-enabled Wasm hash after build:
+- Public GitHub repository: ready.
+- README with setup instructions: ready.
+- Minimum 2 meaningful commits: ready.
+- Screenshot of wallet options available: included, replace if you want the modal open.
+- Deployed contract address: placeholder for event-enabled redeploy.
+- Transaction hash of contract call: placeholder.
+- Live demo link: optional placeholder.
 
-```text
-6dfae6aed85405dccdfe4ba2e37242287287d9e3eafff171b2fc5806fe7e5833
-```
+## Known Limitations
 
-Redeploy the event-enabled contract for Level 2, initialize it with the school
-admin wallet, then paste the new contract ID into the frontend contract field.
-
-## Level 2 Features
-
-- StellarWalletsKit multi-wallet connection.
-- Three visible error classes: wallet connection, balance/payment, and contract call errors.
-- Contract read call: `receipt_count`.
-- Contract write call: `set_merchant`.
-- Transaction status tracking while the contract call is pending, submitted, and confirmed.
-- Live contract event polling through Soroban RPC.
+- The app uses polling for contract events. A websocket or indexer can be added later if needed.
+- The default contract ID may not include the latest event changes until redeployed.
+- The XLM payment demo is Level 1. MealPass production settlement should use a USDC asset contract and real trustline setup.
+- No backend is used. This is intentional because wallet signing, Horizon, and Soroban RPC are enough for the bootcamp requirements.
 
 ## License
 
