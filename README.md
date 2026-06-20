@@ -1,1 +1,123 @@
-# mealpass_ph
+# MealPass PH
+
+Campus meal aid locked by a Soroban smart contract and paid to approved canteens in USDC.
+
+## Problem
+
+A scholarship student at University of San Carlos Cebu receives ₱500 weekly meal aid in cash, but the school cannot verify it was spent on meals, while nearby carinderias wait days to reconcile paper receipts.
+
+## Solution
+
+The school loads USDC into a Soroban meal allowance contract, the student scans a canteen QR, and the contract releases USDC only to approved food merchants with an auditable receipt.
+
+## Timeline
+
+- Day 1: Deploy contract to testnet, create school, student, and canteen identities.
+- Day 2: Build the QR payment demo around `fund_student` and `pay_meal`.
+- Day 3: Add a small dashboard for allowance, receipts, and merchant totals.
+- Day 4: Polish the pitch with one live USDC testnet payment.
+
+## Stellar Features Used
+
+- USDC transfers through a Stellar Asset Contract compatible token.
+- Soroban smart contracts for allowance rules, approved merchants, and receipts.
+- Trustlines for real USDC accounts on Stellar testnet or mainnet.
+
+## Vision and Purpose
+
+MealPass PH helps schools and sponsors send restricted meal aid without forcing canteens into slow paper reconciliation. The goal is simple: students get lunch, canteens get fast settlement, and schools get transparent proof of spending.
+
+## Prerequisites
+
+- Rust stable with `wasm32v1-none` target.
+- Soroban CLI or Stellar CLI version 27.x.
+- A funded Stellar testnet identity.
+
+```bash
+rustup target add wasm32v1-none
+soroban --version
+```
+
+## Build
+
+```bash
+soroban contract build
+```
+
+## Test
+
+```bash
+cargo test
+```
+
+## Deploy to Testnet
+
+```bash
+soroban contract deploy \
+  --wasm target/wasm32v1-none/release/mealpass_ph.wasm \
+  --source school \
+  --network testnet
+```
+
+Save the returned contract ID:
+
+```bash
+CONTRACT_ID=CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+## Sample CLI Invocation
+
+Initialize the contract with the school admin and USDC token contract:
+
+```bash
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --source school \
+  --network testnet \
+  -- initialize \
+  --admin GCSCHOOLADMINADDRESS000000000000000000000000000000000000 \
+  --token CCUSDCTOKENCONTRACT000000000000000000000000000000000000
+```
+
+Approve a canteen:
+
+```bash
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --source school \
+  --network testnet \
+  -- set_merchant \
+  --admin GCSCHOOLADMINADDRESS000000000000000000000000000000000000 \
+  --merchant GCCANTEENADDRESS0000000000000000000000000000000000000 \
+  --approved true
+```
+
+Fund a student allowance with 5 USDC using 7 decimal token units:
+
+```bash
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --source school \
+  --network testnet \
+  -- fund_student \
+  --admin GCSCHOOLADMINADDRESS000000000000000000000000000000000000 \
+  --student GCSTUDENTADDRESS000000000000000000000000000000000000 \
+  --amount 50000000
+```
+
+MVP payment: student pays a canteen 1.50 USDC:
+
+```bash
+soroban contract invoke \
+  --id $CONTRACT_ID \
+  --source student \
+  --network testnet \
+  -- pay_meal \
+  --student GCSTUDENTADDRESS000000000000000000000000000000000000 \
+  --merchant GCCANTEENADDRESS0000000000000000000000000000000000000 \
+  --amount 15000000
+```
+
+## License
+
+MIT
